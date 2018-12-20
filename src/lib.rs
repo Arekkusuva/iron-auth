@@ -86,21 +86,25 @@ struct SessionKey;
 
 impl typemap::Key for SessionKey { type Value = Session; }
 
-pub fn auth_required<H: Handler>(handler: H) -> impl Handler {
-    move |req: &mut Request| {
-        match req.extensions.remove::<AuthConfigKey>() {
-            Some(b) => {
-                // math b.method {}
-                let backend = backends::JWTRedisBackend::with_secret(b.redis_params, b.secret);
-                let raw_session = match backend.get_session_from_request(req) {
-                    Some(s) => s,
-                    None => return Ok(Response::with(status::Unauthorized)),
-                };
-                let session = Session::new(Box::new(raw_session));
-                req.extensions.insert::<SessionKey>(session);
-                handler.handle(req)
-            },
-            None => Ok(Response::with(status::Unauthorized)),
+pub struct AuthWrapper;
+
+impl AuthWrapper {
+    pub fn wrap<H: Handler>(handler: H) -> impl Handler {
+        move |req: &mut Request| {
+            match req.extensions.remove::<AuthConfigKey>() {
+                Some(b) => {
+                    // math b.method {}
+                    let backend = backends::JWTRedisBackend::with_secret(b.redis_params, b.secret);
+                    let raw_session = match backend.get_session_from_request(req) {
+                        Some(s) => s,
+                        None => return Ok(Response::with(status::Unauthorized)),
+                    };
+                    let session = Session::new(Box::new(raw_session));
+                    req.extensions.insert::<SessionKey>(session);
+                    handler.handle(req)
+                },
+                None => Ok(Response::with(status::Unauthorized)),
+            }
         }
     }
 }
