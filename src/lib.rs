@@ -4,52 +4,35 @@ extern crate serde;
 extern crate serde_derive;
 extern crate jsonwebtoken as jwt;
 extern crate r2d2_redis;
-
-mod backends;
+extern crate serde_json;
 
 use iron::prelude::*;
 use iron::{typemap, status, BeforeMiddleware, Handler};
+use iron::headers::{Authorization, Bearer};
 use r2d2_redis::redis::{IntoConnectionInfo, ConnectionInfo};
+use r2d2_redis::r2d2::Pool;
+use r2d2_redis::RedisConnectionManager;
+use serde_json::Value as JsonValue;
 
-#[derive(Debug, Clone)]
-pub enum AuthMethod {
-    JWT,
-}
-
-pub trait RawSession {
-    fn set_raw(&self, key: &str, value: String);
-    fn get_raw(&self, key: &str) -> Option<String>;
-}
-
-pub trait AuthSessionBackend: Send + Sync +'static {
-    type S: RawSession;
-
-    fn get_session_from_request(&self, req: &mut Request) -> Option<Self::S>;
-}
+type RedisPool = Pool<RedisConnectionManager>;
 
 #[derive(Debug, Clone)]
 pub struct AuthConfigMiddleware {
-    pub method: AuthMethod,
     pub secret: String,
     pub redis_params: ConnectionInfo,
 }
 
 impl AuthConfigMiddleware {
-    pub fn with<P: IntoConnectionInfo>(method: AuthMethod, secret: String, redis_params: P) -> AuthConfigMiddleware {
+    pub fn new<P: IntoConnectionInfo>(secret: String, redis_params: P) -> AuthConfigMiddleware {
         AuthConfigMiddleware {
-            method,
             secret,
             redis_params: redis_params.into_connection_info().expect("redis params")
         }
     }
-
-    pub fn with_secret(method: AuthMethod, secret: String) -> AuthConfigMiddleware {
-        AuthConfigMiddleware::with(method, secret, "redis://localhost")
-    }
 }
 
 struct AuthConfigKey;
-// TODO: Figure out how to use AuthSessionBackend as key.
+
 impl typemap::Key for AuthConfigKey { type Value = AuthConfigMiddleware; }
 
 impl BeforeMiddleware for AuthConfigMiddleware {
@@ -59,26 +42,30 @@ impl BeforeMiddleware for AuthConfigMiddleware {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Claims {
+    pub uid: String,
+    pub data: JsonValue,
+    pub exp: usize,
+}
+
 pub struct Session {
-    raw: Box<RawSession>,
+    pool: RedisPool,
+    session_id: (String, String),
+    claims: Claims,
 }
 
 impl Session {
-    pub fn new(raw_session: Box<RawSession>) -> Session {
-        Session {
-            raw: raw_session,
-        }
-    }
-
     pub fn set<V: Into<String>>(self, key: &str, value: V) {
-        self.raw.set_raw(key, value.into())
+        unimplemented!()
     }
 
     pub fn get<V: From<String>>(self, key: &str) -> Option<V> {
-        match self.raw.get_raw(key) {
-            Some(v) => Some(V::from(v)),
-            None => None,
-        }
+        unimplemented!()
+    }
+
+    pub fn get_claims(self) -> Claims {
+        self.claims.clone()
     }
 }
 
@@ -93,19 +80,43 @@ impl AuthWrapper {
         move |req: &mut Request| {
             match req.extensions.remove::<AuthConfigKey>() {
                 Some(b) => {
-                    // math b.method {}
-                    let backend = backends::JWTRedisBackend::with_secret(b.redis_params, b.secret);
-                    let raw_session = match backend.get_session_from_request(req) {
-                        Some(s) => s,
-                        None => return Ok(Response::with(status::Unauthorized)),
+                    let manager = RedisConnectionManager::new(b.redis_params).unwrap();
+                    let pool = Pool::builder()
+                        .build(manager)
+                        .unwrap();
+
+                    let token = match req.headers.get::<Authorization<Bearer>>() {
+                        Some(b) => b.token.clone(),
+                        None => return Self::unauthorized(),
                     };
-                    let session = Session::new(Box::new(raw_session));
+
+                    let claims: Claims = match jwt::decode(&token, b.secret.as_bytes(), &jwt::Validation::default()) {
+                        Ok(t) => t.claims,
+                        Err(_) => return Self::unauthorized(),
+                    };
+
+                    let session_id = Self::get_session_id(&claims.uid, &token);
+
+                    let session = Session {
+                        pool,
+                        session_id,
+                        claims,
+                    };
                     req.extensions.insert::<SessionKey>(session);
                     handler.handle(req)
                 },
-                None => Ok(Response::with(status::Unauthorized)),
+                None => Self::unauthorized(),
             }
         }
+    }
+
+    fn get_session_id(uid: &str, token: &str) -> (String, String) {
+        let session_second_key: String = token.split(".").skip(1).collect();
+        (format!("{}_t", uid), session_second_key)
+    }
+
+    fn unauthorized() -> IronResult<Response> {
+        Ok(Response::with(status::Unauthorized))
     }
 }
 
