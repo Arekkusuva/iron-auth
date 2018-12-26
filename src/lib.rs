@@ -56,15 +56,15 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn set<V: Into<String>>(self, key: &str, value: V) {
+    pub fn set<V: Into<String>>(&self, key: &str, value: V) {
         unimplemented!()
     }
 
-    pub fn get<V: From<String>>(self, key: &str) -> Option<V> {
+    pub fn get<V: From<String>>(&self, key: &str) -> Option<V> {
         unimplemented!()
     }
 
-    pub fn get_claims(self) -> Claims {
+    pub fn get_claims(&self) -> Claims {
         self.claims.clone()
     }
 }
@@ -80,7 +80,7 @@ impl AuthWrapper {
         move |req: &mut Request| {
             match req.extensions.remove::<AuthConfigKey>() {
                 Some(b) => {
-                    let manager = RedisConnectionManager::new(b.redis_params).unwrap();
+                    let manager = RedisConnectionManager::new(b.redis_params.clone()).unwrap();
                     let pool = Pool::builder()
                         .build(manager)
                         .unwrap();
@@ -90,7 +90,7 @@ impl AuthWrapper {
                         None => return Self::unauthorized(),
                     };
 
-                    let claims: Claims = match jwt::decode(&token, b.secret.as_bytes(), &jwt::Validation::default()) {
+                    let claims: Claims = match jwt::decode(&token, b.secret.clone().as_bytes(), &jwt::Validation::default()) {
                         Ok(t) => t.claims,
                         Err(_) => return Self::unauthorized(),
                     };
@@ -103,6 +103,7 @@ impl AuthWrapper {
                         claims,
                     };
                     req.extensions.insert::<SessionKey>(session);
+                    req.extensions.insert::<AuthConfigKey>(b);
                     handler.handle(req)
                 },
                 None => Self::unauthorized(),
@@ -117,6 +118,27 @@ impl AuthWrapper {
 
     fn unauthorized() -> IronResult<Response> {
         Ok(Response::with(status::Unauthorized))
+    }
+}
+
+pub trait AuthReqExt {
+    fn create_token(&mut self, claims: Claims) -> Option<String>;
+    fn session(&self) -> &Session;
+}
+
+impl<'a, 'b> AuthReqExt for Request<'a, 'b> {
+    fn create_token(&mut self, claims: Claims) -> Option<String> {
+        match self.extensions.get::<AuthConfigKey>() {
+            Some(b) => {
+                let token = jwt::encode(&jwt::Header::default(), &claims, b.secret.as_ref()).unwrap();
+                Some(token)
+            },
+            None => None,
+        }
+    }
+
+    fn session(&self) -> &Session {
+        self.extensions.get::<SessionKey>().unwrap()
     }
 }
 
