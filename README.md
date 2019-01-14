@@ -3,9 +3,10 @@ iron-auth [![Build Status](https://travis-ci.org/Arekkusuva/iron-auth.svg?branch
 
 > Under development!
 
-> Authentication middleware for the [Iron](https://github.com/iron/iron) web framework.
+> Authentication middleware for the [Iron](https://github.com/iron/iron) web framework. 
+> Allows you to wrap iron routes to protect it and store data in a session for each user.
 
-It allows you to wrap iron routes to protect it and store data in a session for each user.
+> Uses [JWT](https://jwt.io) for bearer tokens and [Redis](https://redis.io) as sessions storage. 
 
 ## Example
 
