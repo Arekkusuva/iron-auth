@@ -37,7 +37,7 @@ impl typemap::Key for AuthConfigKey { type Value = AuthConfigMiddleware; }
 
 impl BeforeMiddleware for AuthConfigMiddleware {
     fn before(&self, req: &mut Request) -> IronResult<()> {
-        req.extensions.insert::<AuthConfigKey>(self.clone()).unwrap();
+        req.extensions.insert::<AuthConfigKey>(self.clone());
         Ok(())
     }
 }
@@ -49,6 +49,7 @@ pub struct Claims {
     pub exp: usize,
 }
 
+#[derive(Debug)]
 pub struct Session {
     pool: RedisPool,
     session_id: (String, String),
@@ -123,7 +124,7 @@ impl AuthWrapper {
 
 pub trait AuthReqExt {
     fn create_token(&mut self, claims: Claims) -> Option<String>;
-    fn session(&self) -> &Session;
+    fn session(&self) -> Option<&Session>;
 }
 
 impl<'a, 'b> AuthReqExt for Request<'a, 'b> {
@@ -137,8 +138,8 @@ impl<'a, 'b> AuthReqExt for Request<'a, 'b> {
         }
     }
 
-    fn session(&self) -> &Session {
-        self.extensions.get::<SessionKey>().unwrap()
+    fn session(&self) -> Option<&Session> {
+        self.extensions.get::<SessionKey>()
     }
 }
 
