@@ -7,7 +7,6 @@ extern crate r2d2_redis;
 extern crate serde_json;
 
 use std::convert::From;
-use std::error::Error as stdErr;
 
 use iron::prelude::*;
 use iron::{BeforeMiddleware, Handler, typemap, status};
