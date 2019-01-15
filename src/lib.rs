@@ -132,7 +132,7 @@ impl AuthWrapper {
 
                     let claims: Claims = match jwt::decode(&token, b.secret.clone().as_bytes(), &jwt::Validation::default()) {
                         Ok(t) => t.claims,
-                        Err(e) => return Self::unauthorized(),
+                        Err(_) => return Self::unauthorized(),
                     };
 
                     let session_id = Self::get_session_id(&claims.uid, &token);
