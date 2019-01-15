@@ -6,15 +6,21 @@ extern crate jsonwebtoken as jwt;
 extern crate r2d2_redis;
 extern crate serde_json;
 
-use std::convert::From;
+pub mod prelude {
+    pub use super::AuthReqExt;
+}
 
 use iron::prelude::*;
 use iron::{BeforeMiddleware, Handler, typemap, status};
 use iron::headers::{Authorization, Bearer};
+
 use r2d2_redis::redis::{IntoConnectionInfo, ToRedisArgs, FromRedisValue, Commands, RedisError, ConnectionInfo};
 use r2d2_redis::r2d2::{Pool, Error as ConnError};
 use r2d2_redis::{RedisConnectionManager};
+
 use serde_json::Value as JsonValue;
+
+use std::convert::From;
 
 type RedisPool = Pool<RedisConnectionManager>;
 
